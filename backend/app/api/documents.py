@@ -118,9 +118,19 @@ def process_document_background(document_id: int, file_path: str):
 @router.post("/upload")
 async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     import werkzeug.utils
+    import filetype
+    
     secure_filename = werkzeug.utils.secure_filename(file.filename)
     if not secure_filename.endswith(".pdf") or file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are allowed and filename must be valid")
+        
+    # Magic byte validation
+    header = await file.read(2048)
+    kind = filetype.guess(header)
+    if kind is None or kind.mime != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. File does not match PDF magic bytes.")
+        
+    await file.seek(0)
         
     file_path = os.path.join(UPLOAD_DIR, secure_filename)
     with open(file_path, "wb") as buffer:

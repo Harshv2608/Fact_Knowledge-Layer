@@ -8,19 +8,19 @@ router = APIRouter()
 
 @router.post("/compute")
 def compute_relationships(db: Session = Depends(get_db)):
-    facts = db.query(Fact).all()
+    facts = db.query(Fact).yield_per(100)
     count = 0
     
-    # Pre-fetch evidence to map fact_id -> doc_id
-    evidences = db.query(Evidence).all()
-    fact_doc_map = {ev.fact_id: ev.document_id for ev in evidences}
+    # Pre-fetch evidence to map fact_id -> doc_id using tuples
+    evidences = db.query(Evidence.fact_id, Evidence.document_id).all()
+    fact_doc_map = {ev[0]: ev[1] for ev in evidences}
     
-    # Pre-fetch existing relationships
-    existing_rels = db.query(Relationship).all()
+    # Pre-fetch existing relationships using tuples
+    existing_rels = db.query(Relationship.fact_a_id, Relationship.fact_b_id).all()
     existing_pairs = set()
     for rel in existing_rels:
-        existing_pairs.add((rel.fact_a_id, rel.fact_b_id))
-        existing_pairs.add((rel.fact_b_id, rel.fact_a_id))
+        existing_pairs.add((rel[0], rel[1]))
+        existing_pairs.add((rel[1], rel[0]))
         
     for fact_a in facts:
         if fact_a.embedding is None:

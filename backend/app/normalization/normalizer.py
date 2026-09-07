@@ -50,11 +50,18 @@ def parse_time_context(time_str: str) -> dict | None:
         
     lower_time = time_str.lower()
     
-    # Handle "FY24", "FY2024", "FY24/25", "2024-25"
-    fy_match = re.search(r'(fy|fiscal year)?\s*20(\d{2})[-/]?(\d{2})?', lower_time)
+    # Handle explicitly hyphenated years like "2024-25" or "2024/25"
+    range_match = re.search(r'20(\d{2})[-/](\d{2})', lower_time)
+    if range_match:
+        start = 2000 + int(range_match.group(1))
+        return {"type": "fiscal_year", "start_year": start, "end_year": start + 1}
+        
+    # Handle "FY24", "FY 2024" -> In India, FY24 = April 2023 to March 2024
+    fy_match = re.search(r'(fy|fiscal year)\s*(?:20)?(\d{2})', lower_time)
     if fy_match:
-        base_year = 2000 + int(fy_match.group(2))
-        return {"type": "fiscal_year", "start_year": base_year, "end_year": base_year + 1}
+        end_year = 2000 + int(fy_match.group(2))
+        start_year = end_year - 1
+        return {"type": "fiscal_year", "start_year": start_year, "end_year": end_year}
         
     year_match = re.search(r'20\d{2}', lower_time)
     if year_match:
