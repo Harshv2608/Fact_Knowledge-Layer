@@ -37,6 +37,11 @@ export default function Home() {
         body: formData,
       });
       fetchData();
+      // Start polling
+      const poll = setInterval(() => {
+        fetchData();
+      }, 3000);
+      setTimeout(() => clearInterval(poll), 30000); // Poll for 30s
     } catch (e) {
       console.error(e);
     }
@@ -126,9 +131,11 @@ export default function Home() {
                 </div>
                 <div className="space-y-1 text-sm text-gray-600">
                   <p><span className="font-semibold text-gray-700">Predicate:</span> {fact.predicate}</p>
-                  <p><span className="font-semibold text-gray-700">Value:</span> <span className="bg-green-50 text-green-800 px-1 font-medium">{fact.object_value} {fact.unit}</span></p>
+                  <p><span className="font-semibold text-gray-700">Raw Value:</span> <span className="bg-yellow-50 text-yellow-800 px-1 font-medium">{fact.raw_value} {fact.raw_unit}</span></p>
+                  <p><span className="font-semibold text-gray-700">Normalized:</span> <span className="bg-green-50 text-green-800 px-1 font-medium">{fact.normalized_numeric_value} {fact.normalized_scale} {fact.normalized_currency}</span></p>
                   {fact.time_context && <p><span className="font-semibold text-gray-700">Time Context:</span> {fact.time_context}</p>}
                   {(fact.scope || fact.geography) && <p><span className="font-semibold text-gray-700">Scope/Geog:</span> {fact.scope} {fact.geography ? `| ${fact.geography}` : ''}</p>}
+                  {fact.sign_convention_applied && <p><span className="font-semibold text-red-600">Sign Convention:</span> {fact.sign_convention_applied}</p>}
                 </div>
                 {fact.evidence && fact.evidence.length > 0 && (
                   <div className="mt-3 text-xs bg-yellow-50 border border-yellow-100 p-2 rounded text-yellow-800">

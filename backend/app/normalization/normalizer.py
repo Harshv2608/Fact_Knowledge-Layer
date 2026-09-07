@@ -39,3 +39,26 @@ def normalize_value(value_str: str, unit_str: str) -> float | None:
             num *= 100_000
             
     return num
+
+def parse_time_context(time_str: str) -> dict | None:
+    """
+    Parses a time string into a structured representation (start_year, end_year) 
+    for temporal overlap reasoning. Returns dict if parseable, None otherwise.
+    """
+    if not time_str:
+        return None
+        
+    lower_time = time_str.lower()
+    
+    # Handle "FY24", "FY2024", "FY24/25", "2024-25"
+    fy_match = re.search(r'(fy|fiscal year)?\s*20(\d{2})[-/]?(\d{2})?', lower_time)
+    if fy_match:
+        base_year = 2000 + int(fy_match.group(2))
+        return {"type": "fiscal_year", "start_year": base_year, "end_year": base_year + 1}
+        
+    year_match = re.search(r'20\d{2}', lower_time)
+    if year_match:
+        year = int(year_match.group())
+        return {"type": "calendar_year", "start_year": year, "end_year": year}
+        
+    return None

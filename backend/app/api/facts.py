@@ -16,12 +16,15 @@ def get_facts(db: Session = Depends(get_db)):
             "id": f.id,
             "subject": f.subject,
             "predicate": f.predicate,
-            "object_value": f.object_value,
-            "unit": f.unit,
+            "raw_value": f.raw_value,
+            "raw_unit": f.raw_unit,
+            "normalized_numeric_value": f.normalized_numeric_value,
+            "normalized_scale": f.normalized_scale,
+            "normalized_currency": f.normalized_currency,
             "time_context": f.time_context,
             "scope": f.scope,
             "geography": f.geography,
-            "qualifiers": f.qualifiers,
+            "sign_convention_applied": f.sign_convention_applied,
             "confidence": f.confidence,
             "evidence": evs
         })

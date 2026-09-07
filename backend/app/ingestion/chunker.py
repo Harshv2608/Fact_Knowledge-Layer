@@ -1,34 +1,38 @@
-def chunk_text(pages_data, chunk_size=500, overlap=100):
+from typing import List, Dict
+
+def chunk_text(pages: List[Dict], chunk_size: int = 1500, overlap: int = 200) -> List[Dict]:
     """
-    Chunks text while preserving page number provenance.
-    For simplicity, we chunk page by page. If a page is too long, we split it.
+    Semantic chunker. Splits by double newline (paragraphs/tables)
+    to keep tables and their footnotes intact.
     """
     chunks = []
     chunk_index = 0
     
-    for page in pages_data:
-        page_num = page["page_number"]
+    for page in pages:
         text = page["text"]
+        blocks = text.split("\n\n")
         
-        words = text.split()
-        if not words:
-            continue
-            
-        start = 0
-        while start < len(words):
-            end = start + chunk_size
-            chunk_words = words[start:end]
-            chunk_text = " ".join(chunk_words)
-            
+        current_chunk_text = ""
+        
+        for block in blocks:
+            if len(current_chunk_text) + len(block) > chunk_size and len(current_chunk_text) > 0:
+                chunks.append({
+                    "page_number": page["page_number"],
+                    "chunk_index": chunk_index,
+                    "text": current_chunk_text.strip()
+                })
+                chunk_index += 1
+                
+                current_chunk_text = block + "\n\n"
+            else:
+                current_chunk_text += block + "\n\n"
+                
+        if current_chunk_text.strip():
             chunks.append({
+                "page_number": page["page_number"],
                 "chunk_index": chunk_index,
-                "page_number": page_num,
-                "text": chunk_text
+                "text": current_chunk_text.strip()
             })
             chunk_index += 1
-            
-            if end >= len(words):
-                break
-            start += (chunk_size - overlap)
             
     return chunks

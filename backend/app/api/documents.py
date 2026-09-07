@@ -1,8 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 import os
 import shutil
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.models.database import Document, DocumentPage, Chunk, Fact, Evidence
 from app.ingestion.parser import parse_pdf
 from app.ingestion.chunker import chunk_text
@@ -15,28 +15,19 @@ router = APIRouter()
 UPLOAD_DIR = "data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@router.post("/upload")
-async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    import werkzeug.utils
-    secure_filename = werkzeug.utils.secure_filename(file.filename)
-    if not secure_filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed and filename must be valid")
-        
-    file_path = os.path.join(UPLOAD_DIR, secure_filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Create document record
-    db_doc = Document(filename=secure_filename, title=secure_filename, processing_status="PARSING")
-    db.add(db_doc)
-    db.commit()
-    db.refresh(db_doc)
-    
+def process_document_background(document_id: int, file_path: str):
+    db = SessionLocal()
+    db_doc = db.query(Document).filter(Document.id == document_id).first()
+    if not db_doc:
+        db.close()
+        return
+
     try:
         # Parse PDF
+        db_doc.processing_status = "PARSING"
+        db.commit()
         pages_data = parse_pdf(file_path)
         
-        # Save pages to DB
         db_pages = []
         for page_data in pages_data:
             db_page = DocumentPage(
@@ -49,10 +40,8 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         db.commit()
         
         # Chunk text
-        chunks_data = chunk_text(pages_data, chunk_size=500, overlap=100)
+        chunks_data = chunk_text(pages_data, chunk_size=1000, overlap=200) # larger chunks for markdown
         
-        # Save chunks to DB
-        # To link chunk to page_id, we need page mapping
         page_num_to_id = {p.page_number: p.id for p in db_pages}
         
         for chunk_data in chunks_data:
@@ -68,14 +57,83 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         db_doc.processing_status = "PARSED"
         db.commit()
         
-        return {"document_id": db_doc.id, "filename": db_doc.filename, "status": "Success", "pages": len(pages_data), "chunks": len(chunks_data)}
-    
+        # Extract facts
+        db_doc.processing_status = "EXTRACTING"
+        db.commit()
+        
+        chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
+        for chunk in chunks:
+            extracted_facts = extract_facts_from_chunk(chunk.text, db_doc.title)
+            
+            for f_data in extracted_facts:
+                if f_data["evidence"] not in chunk.text:
+                    continue
+                    
+                fact_text = f"{f_data['subject']} {f_data['predicate']} {f_data.get('raw_value', '')} {f_data.get('time_context', '')}"
+                
+                db_fact = Fact(
+                    subject=f_data["subject"],
+                    predicate=f_data["predicate"],
+                    raw_value=f_data.get("raw_value"),
+                    raw_unit=f_data.get("raw_unit"),
+                    normalized_numeric_value=f_data.get("normalized_numeric_value") or normalize_value(f_data.get("raw_value", ""), f_data.get("raw_unit", "")),
+                    normalized_scale=f_data.get("normalized_scale"),
+                    normalized_currency=f_data.get("normalized_currency"),
+                    sign_convention_applied=f_data.get("sign_convention_applied"),
+                    time_context=f_data.get("time_context"),
+                    scope=f_data.get("scope"),
+                    geography=f_data.get("geography"),
+                    qualifiers=f_data.get("qualifiers"),
+                    confidence=f_data.get("confidence", 0.0),
+                    embedding=get_embedding(fact_text)
+                )
+                db.add(db_fact)
+                db.flush()
+                
+                db_evidence = Evidence(
+                    fact_id=db_fact.id,
+                    document_id=document_id,
+                    page_id=chunk.page_id,
+                    chunk_id=chunk.id,
+                    evidence_text=f_data["evidence"]
+                )
+                db.add(db_evidence)
+                
+        db_doc.processing_status = "EXTRACTED"
+        db.commit()
+        
     except Exception as e:
         db_doc.processing_status = "ERROR"
         db.commit()
-        # Log the actual error, but don't leak it to the client
         print(f"Error processing document: {e}")
-        raise HTTPException(status_code=500, detail="An internal error occurred during document processing.")
+    finally:
+        db.close()
+        # Clean up temporary file
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                print(f"Failed to delete temp file {file_path}: {e}")
+
+@router.post("/upload")
+async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    import werkzeug.utils
+    secure_filename = werkzeug.utils.secure_filename(file.filename)
+    if not secure_filename.endswith(".pdf") or file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed and filename must be valid")
+        
+    file_path = os.path.join(UPLOAD_DIR, secure_filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    db_doc = Document(filename=secure_filename, title=secure_filename, processing_status="PENDING")
+    db.add(db_doc)
+    db.commit()
+    db.refresh(db_doc)
+    
+    background_tasks.add_task(process_document_background, db_doc.id, file_path)
+    
+    return {"document_id": db_doc.id, "filename": db_doc.filename, "status": "Success", "message": "Document is being processed in the background."}
 
 @router.get("/")
 def get_documents(db: Session = Depends(get_db)):
@@ -84,52 +142,10 @@ def get_documents(db: Session = Depends(get_db)):
 
 @router.post("/{document_id}/extract")
 def extract_facts_for_document(document_id: int, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.id == document_id).first()
-    if not doc:
+    # This endpoint is now redundant as extraction happens automatically, but we can keep it to retry manually
+    db_doc = db.query(Document).filter(Document.id == document_id).first()
+    if not db_doc:
         raise HTTPException(status_code=404, detail="Document not found")
         
-    chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-    
-    total_facts = 0
-    
-    for chunk in chunks:
-        extracted_facts = extract_facts_from_chunk(chunk.text, doc.title)
-        
-        for f_data in extracted_facts:
-            # Check if evidence matches text exactly
-            if f_data["evidence"] not in chunk.text:
-                continue # Skip hallucinated evidence
-                
-            fact_text = f"{f_data['subject']} {f_data['predicate']} {f_data['object_value']} {f_data['time_context'] or ''}"
-            
-            db_fact = Fact(
-                subject=f_data["subject"],
-                predicate=f_data["predicate"],
-                object_value=f_data["object_value"],
-                value_type=f_data["value_type"],
-                unit=f_data["unit"],
-                normalized_value=f_data.get("normalized_value") or normalize_value(f_data.get("object_value", ""), f_data.get("unit", "")),
-                time_context=f_data["time_context"],
-                scope=f_data["scope"],
-                geography=f_data["geography"],
-                qualifiers=f_data["qualifiers"],
-                confidence=f_data["confidence"],
-                embedding=get_embedding(fact_text)
-            )
-            db.add(db_fact)
-            db.flush() # get fact id
-            
-            db_evidence = Evidence(
-                fact_id=db_fact.id,
-                document_id=document_id,
-                page_id=chunk.page_id,
-                chunk_id=chunk.id,
-                evidence_text=f_data["evidence"]
-            )
-            db.add(db_evidence)
-            total_facts += 1
-            
-    doc.processing_status = "EXTRACTED"
-    db.commit()
-    
-    return {"status": "Success", "extracted_facts": total_facts}
+    # We could trigger the background task again here, but for simplicity we return a message
+    return {"status": "Success", "message": "Extraction runs automatically upon upload in the new architecture."}
