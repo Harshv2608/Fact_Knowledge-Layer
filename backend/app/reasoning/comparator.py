@@ -65,7 +65,6 @@ def compare_facts(fact_a: dict, fact_b: dict) -> dict:
 
     prompt = f"""
 Compare the following two extracted facts and determine their relationship.
-Relationship must be one of: CORROBORATES, CONTRADICTS, RECONCILES, UNRELATED, UNCERTAIN.
 
 Fact A:
 - Subject: {fact_a.get('subject')}
@@ -93,23 +92,37 @@ First, determine if they refer to the same underlying proposition (semantic equi
 If they do:
 - CORROBORATES: Deterministic value match AND same semantic proposition AND same time period/scope.
 - CONTRADICTS: Same semantic proposition AND same time period/scope AND deterministic inequality AND no reconcilable context.
-- RECONCILES: Same semantic proposition AND different values AND explicit contextual difference (e.g., different fiscal year, 'first advance' vs 'final', or unit difference not captured).
+- EXPLAINABLE_CONTRADICTION: Same semantic proposition AND different values AND explicit contextual difference (e.g., different fiscal year, 'first advance' vs 'final', or unit difference not captured).
 - UNCERTAIN: Same proposition, values differ, but no clear contextual reason.
+
+OUTPUT FORMAT:
+Respond ONLY with valid JSON. Do not use markdown blocks. Ensure the object matches this structure:
+{{
+  "relationship_type": "CORROBORATES | CONTRADICTS | EXPLAINABLE_CONTRADICTION | UNRELATED | UNCERTAIN",
+  "confidence": 0.95,
+  "explanation": "Why this relationship holds based on the deterministic checks and context"
+}}
 """
+    import json
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-pro',
+                model='gemini-3.6-flash',
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
-                    'response_schema': RelationshipOutput,
                     'temperature': 0.1,
                 },
             )
-            if response.parsed:
-                return response.parsed.model_dump()
-            break
+            # Clean possible markdown block
+            text_resp = response.text.strip()
+            if text_resp.startswith("```json"):
+                text_resp = text_resp[7:]
+            if text_resp.endswith("```"):
+                text_resp = text_resp[:-3]
+            
+            parsed = json.loads(text_resp.strip())
+            return parsed
         except Exception as e:
             print(f"Comparison error (attempt {attempt+1}): {e}")
             time.sleep(2 ** attempt)

@@ -39,23 +39,47 @@ RULES:
 4. Capture all relevant context (time, scope, geography, qualifiers) to ensure the fact is unambiguous.
 5. If the text is a table and includes footnotes about sign conventions (e.g., "-" signifies inflow), extract that exactly into 'sign_convention_applied'.
 
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON array of objects. Do not include markdown code blocks. Each object must have these exact string keys:
+- subject
+- predicate
+- raw_value
+- raw_unit (or null)
+- time_context (or null)
+- scope (or null)
+- geography (or null)
+- qualifiers (or null)
+- sign_convention_applied (or null)
+- confidence (number 0.0 to 1.0)
+- evidence
+
 Text Chunk:
 {text}
 """
+    import json
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-pro',
+                model='gemini-3.6-flash',
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
-                    'response_schema': FactExtractionResponse,
                     'temperature': 0.1,
                 },
             )
-            if response.parsed:
-                return [fact.model_dump() for fact in response.parsed.facts]
-            break
+            # Clean possible markdown block
+            text_resp = response.text.strip()
+            if text_resp.startswith("```json"):
+                text_resp = text_resp[7:]
+            if text_resp.endswith("```"):
+                text_resp = text_resp[:-3]
+            
+            parsed = json.loads(text_resp.strip())
+            if isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict) and "facts" in parsed:
+                return parsed["facts"]
+            return []
         except Exception as e:
             print(f"Extraction error (attempt {attempt+1}): {e}")
             time.sleep(2 ** attempt)

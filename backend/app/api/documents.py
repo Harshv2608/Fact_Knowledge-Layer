@@ -62,9 +62,32 @@ def process_document_background(document_id: int, file_path: str):
         db.commit()
         
         chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-        for chunk in chunks:
-            extracted_facts = extract_facts_from_chunk(chunk.text, db_doc.title)
-            
+        
+        # Brownie Point: Handle large PDFs without significant performance issues
+        # Parallelize LLM extraction to speed up large documents
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+        results = []
+        
+        # Free Tier limit mitigation: Only use 1 worker and add delay to stay under 15 RPM
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            def extract_with_delay(text, title):
+                time.sleep(5) # 5 seconds delay ensures max 12 RPM
+                return extract_facts_from_chunk(text, title)
+                
+            future_to_chunk = {
+                executor.submit(extract_with_delay, chunk.text, db_doc.title): chunk 
+                for chunk in chunks
+            }
+            for future in as_completed(future_to_chunk):
+                chunk = future_to_chunk[future]
+                try:
+                    extracted_facts = future.result()
+                    results.append((chunk, extracted_facts))
+                except Exception as exc:
+                    print(f"Chunk extraction generated an exception: {exc}")
+                    
+        for chunk, extracted_facts in results:
             for f_data in extracted_facts:
                 if f_data["evidence"] not in chunk.text:
                     continue
