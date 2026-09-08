@@ -82,7 +82,7 @@ def process_document_background(document_id: int, file_path: str):
         # Use 3 workers to match the 3 API keys for parallel extraction
         with ThreadPoolExecutor(max_workers=3) as executor:
             def extract_with_delay(text, title):
-                time.sleep(2) # 2 seconds delay per worker; with 3 keys ~30 RPM total (10 RPM per key)
+                time.sleep(5) # 5s delay per worker; with 3 keys stays under 15 RPM per key limit
                 return extract_facts_from_chunk(text, title)
                 
             future_to_chunk = {
