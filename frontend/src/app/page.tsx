@@ -37,18 +37,21 @@ export default function Home() {
   }, []);
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
+    if (!e.target.files || e.target.files.length === 0) return;
     setLoading(true);
     try {
-      await fetch("http://localhost:8000/api/documents/upload", {
-        method: "POST",
-        body: formData,
+      const uploadPromises = Array.from(e.target.files).map(file => {
+        const formData = new FormData();
+        formData.append("file", file);
+        return fetch("http://localhost:8000/api/documents/upload", {
+          method: "POST",
+          body: formData,
+        });
       });
+      
+      await Promise.all(uploadPromises);
       fetchData();
+      
       // Poll more aggressively initially, then slow down
       let pollCount = 0;
       const poll = setInterval(() => {
@@ -109,7 +112,7 @@ export default function Home() {
             </h2>
             <div className="relative group cursor-pointer">
               <div className="absolute inset-0 bg-neutral-50 rounded-xl border border-dashed border-neutral-300 transition-colors group-hover:border-neutral-500 group-hover:bg-neutral-100" />
-              <input type="file" onChange={uploadFile} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept=".pdf" />
+              <input type="file" multiple onChange={uploadFile} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept=".pdf" />
               <div className="relative py-8 px-6 text-center pointer-events-none">
                 <FileCheck2 className="mx-auto text-neutral-400 mb-3 group-hover:text-neutral-700 transition-colors" size={24} />
                 <p className="text-sm font-semibold text-neutral-800">Upload PDF Source</p>
