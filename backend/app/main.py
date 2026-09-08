@@ -6,7 +6,13 @@ from app.api import documents
 from app.api import relationships
 from app.api import facts
 
+from sqlalchemy import text
+
 # Create tables
+with engine.connect() as conn:
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    conn.commit()
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Fact Knowledge Layer API")
