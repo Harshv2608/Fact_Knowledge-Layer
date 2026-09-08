@@ -52,13 +52,27 @@ export default function Home() {
       await Promise.all(uploadPromises);
       fetchData();
       
-      // Poll more aggressively initially, then slow down
+      // Poll until all documents reach a terminal state (EXTRACTED or ERROR)
+      // Poll every 5s for up to 10 minutes
       let pollCount = 0;
-      const poll = setInterval(() => {
+      const poll = setInterval(async () => {
         pollCount++;
-        fetchData();
-        if (pollCount > 15) clearInterval(poll); // Stop after ~45s
-      }, 3000);
+        try {
+          const docRes = await fetch(`http://localhost:8000/api/documents/`);
+          const docs = await docRes.json();
+          setDocuments(docs);
+          
+          // Check if all documents are done
+          const allDone = docs.length > 0 && docs.every((d: Document) => d.status === 'EXTRACTED' || d.status === 'ERROR');
+          if (allDone || pollCount > 120) {
+            clearInterval(poll);
+            // Final full refresh
+            fetchData();
+          }
+        } catch {
+          // ignore fetch errors during polling
+        }
+      }, 5000);
     } catch (e) {
       console.error(e);
     }

@@ -22,7 +22,10 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-factuser}:${POSTGRES_PASSWORD:-factpass}@db:5432/${POSTGRES_DB:-factdb}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY_1=${GEMINI_API_KEY_1}
+      - GEMINI_API_KEY_2=${GEMINI_API_KEY_2}
+      - GEMINI_API_KEY_3=${GEMINI_API_KEY_3}
+      - MOCK_LLM=${MOCK_LLM:-0}
     depends_on:
       - db
     volumes:

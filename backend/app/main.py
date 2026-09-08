@@ -1,5 +1,4 @@
 import os
-os.environ['MOCK_LLM'] = '1'
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.session import engine

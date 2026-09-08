@@ -2,13 +2,38 @@ from google import genai
 from pydantic import BaseModel, Field
 import os
 import time
+import threading
 
 class RelationshipOutput(BaseModel):
     relationship_type: str = Field(description="One of: CORROBORATES, CONTRADICTS, RECONCILES, UNRELATED, UNCERTAIN")
     confidence: float = Field(description="Confidence from 0.0 to 1.0")
     explanation: str = Field(description="Explanation of why this relationship holds")
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy_key"))
+# --- Multi-key client pool (shared logic with llm_extractor) ---
+_api_keys = []
+for key_env in ["GEMINI_API_KEY_1", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"]:
+    key = os.getenv(key_env)
+    if key and key != "your_gemini_api_key_here":
+        _api_keys.append(key)
+
+if not _api_keys:
+    fallback = os.getenv("GEMINI_API_KEY", "")
+    if fallback and fallback != "your_gemini_api_key_here":
+        _api_keys.append(fallback)
+
+_clients = [genai.Client(api_key=k) for k in _api_keys] if _api_keys else []
+_client_index = 0
+_client_lock = threading.Lock()
+
+def _get_next_client():
+    """Round-robin client selection across API keys (thread-safe)."""
+    global _client_index
+    if not _clients:
+        return None
+    with _client_lock:
+        client = _clients[_client_index % len(_clients)]
+        _client_index += 1
+        return client
 
 def deterministic_compare(fact_a: dict, fact_b: dict) -> dict:
     """Returns deterministic equality check results."""
@@ -58,8 +83,8 @@ def deterministic_compare(fact_a: dict, fact_b: dict) -> dict:
     }
 
 def compare_facts(fact_a: dict, fact_b: dict) -> dict:
-    if not os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") == "your_gemini_api_key_here":
-        return {"relationship_type": "UNRELATED", "confidence": 0.0, "explanation": "Mocked due to missing API key"}
+    if not _clients:
+        return {"relationship_type": "UNRELATED", "confidence": 0.0, "explanation": "No API keys configured"}
 
     det_checks = deterministic_compare(fact_a, fact_b)
 
@@ -104,10 +129,14 @@ Respond ONLY with valid JSON. Do not use markdown blocks. Ensure the object matc
 }}
 """
     import json
+    client = _get_next_client()
+    if not client:
+        return {"relationship_type": "UNRELATED", "confidence": 0.0, "explanation": "No API client available"}
+
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model='gemini-3.6-flash',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
@@ -124,7 +153,13 @@ Respond ONLY with valid JSON. Do not use markdown blocks. Ensure the object matc
             parsed = json.loads(text_resp.strip())
             return parsed
         except Exception as e:
-            print(f"Comparison error (attempt {attempt+1}): {e}")
-            time.sleep(2 ** attempt)
+            print(f"[LLM] Comparison error (attempt {attempt+1}/3): {e}")
+            if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
+                wait_time = 5 * (2 ** attempt)
+                print(f"[LLM] Rate limited. Waiting {wait_time}s before retry with different key...")
+                time.sleep(wait_time)
+                client = _get_next_client()
+            else:
+                time.sleep(2 ** attempt)
         
     return {"relationship_type": "UNRELATED", "confidence": 0.0, "explanation": "Error during comparison"}
