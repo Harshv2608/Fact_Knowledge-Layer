@@ -28,7 +28,11 @@ async def main():
     for i, f in enumerate(all_facts): f['id'] = i + 1
     
     print('Comparing...')
-    rels = await compare_facts(all_facts)
+    rels = []
+    for i in range(len(all_facts)):
+        for j in range(i + 1, len(all_facts)):
+            rel = compare_facts(all_facts[i], all_facts[j])
+            rels.append(rel)
     print('Relationships:', json.dumps(rels, indent=2))
     
     print('--- CASE 4 ---')
