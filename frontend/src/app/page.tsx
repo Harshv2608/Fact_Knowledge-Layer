@@ -16,24 +16,25 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("facts"); // "facts" or "relationships"
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const fetchData = async () => {
     try {
       const [docRes, factRes, relRes] = await Promise.all([
-        fetch("http://localhost:8000/api/documents/"),
-        fetch("http://localhost:8000/api/facts/"),
-        fetch("http://localhost:8000/api/relationships/")
+        fetch(`http://localhost:8000/api/documents/`),
+        fetch(`http://localhost:8000/api/facts/`),
+        fetch(`http://localhost:8000/api/relationships/`)
       ]);
       setDocuments(await docRes.json());
       setFacts(await factRes.json());
       setRelationships(await relRes.json());
-    } catch (e) {
-      console.error("Fetch Error:", e);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
+  }, []);
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;

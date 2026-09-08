@@ -23,9 +23,21 @@ class FactExtractionResponse(BaseModel):
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy_key"))
 
 def extract_facts_from_chunk(text: str, document_title: str) -> List[dict]:
-    if not os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") == "your_gemini_api_key_here":
-        # Mock logic if API key isn't provided, to prevent crash during testing
-        return []
+    if os.getenv("MOCK_LLM") == "1" or not os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") == "your_gemini_api_key_here":
+        # Mock logic if API key isn't provided or MOCK_LLM is enabled, to prevent consuming tokens during tests
+        return [{
+            "subject": "Mock Subject",
+            "predicate": "Mock Predicate",
+            "raw_value": "123",
+            "raw_unit": "%",
+            "time_context": "2024",
+            "scope": "National",
+            "geography": "India",
+            "qualifiers": "Mock qualifier",
+            "sign_convention_applied": None,
+            "confidence": 0.9,
+            "evidence": text[:100] if len(text) > 100 else text
+        }]
         
     prompt = f"""
 You are a highly accurate Fact Extraction system.

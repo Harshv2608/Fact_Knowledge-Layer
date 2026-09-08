@@ -62,7 +62,6 @@ def process_document_background(document_id: int, file_path: str):
         db.commit()
         
         chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-        
         # Brownie Point: Handle large PDFs without significant performance issues
         # Parallelize LLM extraction to speed up large documents
         from concurrent.futures import ThreadPoolExecutor, as_completed

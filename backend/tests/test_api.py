@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import app as fastapi_app
 import app.api.documents
 
 # Mock background task so it doesn't execute the full ML pipeline synchronously in TestClient
 app.api.documents.process_document_background = lambda doc_id, path: None
 
-client = TestClient(app)
+client = TestClient(fastapi_app)
 
 def test_upload_returns_200():
     import io
