@@ -23,10 +23,13 @@ def process_document_background(document_id: int, file_path: str):
         return
 
     try:
+        print(f"[{document_id}] Starting processing for {file_path}")
         # Parse PDF
         db_doc.processing_status = "PARSING"
         db.commit()
+        print(f"[{document_id}] Parsing PDF...")
         pages_data = parse_pdf(file_path)
+        print(f"[{document_id}] Parsed {len(pages_data)} pages.")
         
         db_pages = []
         for page_data in pages_data:
@@ -38,13 +41,17 @@ def process_document_background(document_id: int, file_path: str):
             db.add(db_page)
             db_pages.append(db_page)
         db.commit()
+        print(f"[{document_id}] Saved pages to DB.")
         
         # Chunk text
+        print(f"[{document_id}] Chunking text...")
         chunks_data = chunk_text(pages_data, chunk_size=1000, overlap=200) # larger chunks for markdown
+        print(f"[{document_id}] Generated {len(chunks_data)} chunks.")
         
         page_num_to_id = {p.page_number: p.id for p in db_pages}
         
-        for chunk_data in chunks_data:
+        print(f"[{document_id}] Generating embeddings for chunks...")
+        for i, chunk_data in enumerate(chunks_data):
             db_chunk = Chunk(
                 document_id=db_doc.id,
                 page_id=page_num_to_id.get(chunk_data["page_number"]),
@@ -53,13 +60,17 @@ def process_document_background(document_id: int, file_path: str):
                 embedding=get_embedding(chunk_data["text"])
             )
             db.add(db_chunk)
+            if i % 10 == 0:
+                print(f"[{document_id}] Embedded {i}/{len(chunks_data)} chunks.")
             
         db_doc.processing_status = "PARSED"
         db.commit()
+        print(f"[{document_id}] Status set to PARSED.")
         
         # Extract facts
         db_doc.processing_status = "EXTRACTING"
         db.commit()
+        print(f"[{document_id}] Status set to EXTRACTING. Starting LLM...")
         
         chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
         # Brownie Point: Handle large PDFs without significant performance issues

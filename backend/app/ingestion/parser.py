@@ -7,7 +7,7 @@ def parse_pdf(file_path: str) -> List[Dict]:
         for i, page in enumerate(pdf.pages):
             # layout=True preserves spatial arrangement (tables stay visually intact like ASCII grids)
             # This ensures footnotes placed physically below a table remain directly adjacent in the text stream.
-            text = page.extract_text(layout=True) or ""
+            text = page.extract_text() or ""
                 
             pages_data.append({
                 "page_number": i + 1,
