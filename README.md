@@ -24,7 +24,7 @@ The system ingests PDFs, extracts semantic and numerical facts, preserves their 
 ---
 
 ## 🎥 Video Demo
-[**Link to 3-Minute Video Demo**](#) *(Replace with actual YouTube/Loom link)*
+[**Link to 3-Minute Video Demo**](https://youtu.be/8LuFcld3SLg)
 
 ---
 
